@@ -11,7 +11,7 @@ CHANNELS = 1
 RATE = 8000
 CHUNK = 160
 
-RTP_LISTEN_HOST = '127.0.0.1'
+RTP_LISTEN_HOST = '0.0.0.0'
 RTP_LISTEN_PORT = 5005
 
 def get_full_timestamp(rtp_ts_32):
@@ -33,6 +33,7 @@ def get_full_timestamp(rtp_ts_32):
 
 def rtp_recv_thread(sip_server, jitter_buffer, metrics_file):
     udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     udp_sock.bind((RTP_LISTEN_HOST, RTP_LISTEN_PORT))
     udp_sock.settimeout(0.5)
     
@@ -72,6 +73,7 @@ def playout_thread(sip_server, jitter_buffer):
     print("Starting audio playout...")
     
     try:
+        import sounddevice as sd
         with sd.RawOutputStream(samplerate=RATE, channels=CHANNELS, dtype='int16', blocksize=CHUNK) as stream:
             while sip_server.state == SIPState.IN_CALL:
                 # Pop 20ms of audio from jitter buffer
@@ -83,24 +85,34 @@ def playout_thread(sip_server, jitter_buffer):
     except Exception as e:
         print(f"Playout Error: {e}")
 
-def main():
+def start_receiver(status_callback=None, stop_event=None):
     # Setup CSV file for metrics
-    f = open('jitter_metrics.csv', 'w', newline='')
+    f = open('jitter_metrics.csv', 'w', newline='', buffering=1)
     writer = csv.writer(f)
     writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
     
-    sip_server = SIPServer(port=5060)
+    sip_server = SIPServer(host='0.0.0.0', port=5060)
     sip_server.start()
     
     jitter_buffer = AdaptiveJitterBuffer()
     
     print("Waiting for incoming calls on port 5060...")
+    if status_callback:
+        status_callback("Listening")
     
     # Wait for a call to be established
     while sip_server.state != SIPState.IN_CALL:
+        if stop_event and stop_event.is_set():
+            sip_server.stop()
+            f.close()
+            if status_callback:
+                status_callback("Idle")
+            return
         time.sleep(0.1)
         
     print("Call accepted! Starting media processing...")
+    if status_callback:
+        status_callback("In-Call")
     
     # Using threading.Lock inside csv writing isn't strictly necessary since only one thread writes, 
     # but the file object itself isn't fully thread-safe in Python if multiple threads wrote. Here it's fine.
@@ -112,10 +124,14 @@ def main():
     
     try:
         while sip_server.state == SIPState.IN_CALL:
-            time.sleep(1)
+            if stop_event and stop_event.is_set():
+                break
+            time.sleep(0.5)
     except KeyboardInterrupt:
-        print("\nEnding call...")
-        sip_server.state = SIPState.ENDED
+        pass
+        
+    print("\nEnding call...")
+    sip_server.state = SIPState.ENDED
         
     time.sleep(1)
     sip_server.stop()
@@ -123,6 +139,8 @@ def main():
     play_thread.join()
     f.close()
     print("Receiver shut down cleanly.")
+    if status_callback:
+        status_callback("Idle")
 
 if __name__ == "__main__":
-    main()
+    start_receiver()

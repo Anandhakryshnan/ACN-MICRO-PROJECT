@@ -15,23 +15,20 @@ def main():
         print("No data in jitter_metrics.csv.")
         return
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 4))
     
-    # Plot Transit Delay (n_i)
-    plt.plot(df['seq_num'], df['transit_delay'], label='Transit Delay ($n_i$)', color='blue', alpha=0.6, linewidth=1.5)
+    # Plot Jitter (v_i)
+    plt.plot(df['seq_num'], df['jitter'], label='Jitter Variance ($v_i$)', color='purple', alpha=0.8, linewidth=2)
     
-    # Plot Playout Target Window (p_i)
-    plt.plot(df['seq_num'], df['playout_target'], label='Playout Target Window ($p_i$)', color='red', alpha=0.8, linewidth=2)
-    
-    plt.title('VoIP Engine: Adaptive Jitter Management Analysis')
+    plt.title('VoIP Engine: Jitter Variance Analysis')
     plt.xlabel('Sequence Number')
-    plt.ylabel('Delay (ms)')
+    plt.ylabel('Jitter Delay (ms)')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
     
-    plt.savefig('jitter_analysis.png', dpi=300)
-    print("Plot saved to jitter_analysis.png")
+    plt.savefig('jitter_variance.png', dpi=300)
+    print("Plot saved to jitter_variance.png")
     
 if __name__ == "__main__":
     main()
