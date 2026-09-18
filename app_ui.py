@@ -34,8 +34,8 @@ class DashboardButton(tk.Button):
             activebackground=self.hover_bg,
             activeforeground=TEXT,
             cursor="hand2",
-            width=35,  # FIXED WIDTH FOR ALL BUTTONS
-            height=2   # FIXED HEIGHT FOR ALL BUTTONS
+            width=20,  # REDUCED WIDTH for grid layout
+            height=1   # REDUCED HEIGHT to fit more buttons on screen
         )
         
     def on_enter(self, e):
@@ -50,8 +50,8 @@ class VoIPApp:
     def __init__(self, root):
         self.root = root
         self.root.title("VoIP Engine Dashboard")
-        self.root.geometry("450x750")
         self.root.configure(bg=BG)
+        # We removed the fixed geometry so Tkinter will auto-size the window to fit everything exactly.
         self.root.resizable(False, False)
         
         try:
@@ -60,6 +60,7 @@ class VoIPApp:
             self.local_ip = "127.0.0.1"
             
         self.stop_event = threading.Event()
+        self.mute_event = threading.Event()
         self.setup_ui()
         
     def setup_ui(self):
@@ -89,27 +90,27 @@ class VoIPApp:
         self.status_label = tk.Label(card, text="● IDLE", font=("Segoe UI", 12, "bold"), bg=CARD, fg=MUTED)
         self.status_label.pack(pady=(0, 20))
         
-        # Buttons - All perfectly equal size
+        # Buttons - Grid Layout
         btn_frame = tk.Frame(card, bg=CARD)
-        btn_frame.pack()
+        btn_frame.pack(pady=10)
         
-        self.btn_listen = DashboardButton(btn_frame, text="🎧 LISTEN (RECEIVER)", command=self.start_listen)
-        self.btn_listen.pack(pady=5)
+        self.btn_listen = DashboardButton(btn_frame, text="🎧 LISTEN", command=self.start_listen)
+        self.btn_listen.grid(row=0, column=0, padx=5, pady=5, sticky="we")
         
-        self.btn_call = DashboardButton(btn_frame, text="📞 CALL TARGET (SENDER)", command=self.start_call)
-        self.btn_call.pack(pady=5)
+        self.btn_call = DashboardButton(btn_frame, text="📞 CALL", command=self.start_call)
+        self.btn_call.grid(row=0, column=1, padx=5, pady=5, sticky="we")
+        
+        self.btn_mute = DashboardButton(btn_frame, text="🎤 MUTE", bg="#f59e0b", activebackground="#d97706", command=self.toggle_mute)
+        self.btn_mute.grid(row=1, column=0, padx=5, pady=5, sticky="we")
         
         self.btn_end = DashboardButton(btn_frame, text="🛑 END CALL", bg="#ef4444", activebackground="#dc2626", command=self.end_call)
-        self.btn_end.pack(pady=5)
+        self.btn_end.grid(row=1, column=1, padx=5, pady=5, sticky="we")
         
-        self.btn_graph = DashboardButton(btn_frame, text="📊 SHOW DELAY GRAPH", bg="#10b981", activebackground="#059669", command=self.show_graph)
-        self.btn_graph.pack(pady=5)
+        self.btn_graph = DashboardButton(btn_frame, text="📊 DELAY GRAPH", bg="#10b981", activebackground="#059669", command=self.show_graph)
+        self.btn_graph.grid(row=2, column=0, padx=5, pady=5, sticky="we")
         
-        self.btn_jitter = DashboardButton(btn_frame, text="📉 SHOW JITTER VARIANCE", bg="#8b5cf6", activebackground="#7c3aed", command=self.show_jitter_graph)
-        self.btn_jitter.pack(pady=5)
-        
-        self.btn_csv = DashboardButton(btn_frame, text="📄 OPEN RAW DATA (CSV)", bg="#64748b", activebackground="#475569", command=self.show_csv)
-        self.btn_csv.pack(pady=5)
+        self.btn_jitter = DashboardButton(btn_frame, text="📉 JITTER GRAPH", bg="#8b5cf6", activebackground="#7c3aed", command=self.show_jitter_graph)
+        self.btn_jitter.grid(row=2, column=1, padx=5, pady=5, sticky="we")
 
     def update_status(self, status):
         status_map = {
@@ -132,7 +133,7 @@ class VoIPApp:
         
         def run():
             try:
-                start_receiver(self.update_status, self.stop_event)
+                start_receiver(self.update_status, self.stop_event, self.mute_event)
             except Exception as e:
                 messagebox.showerror("Error", f"Receiver failed to start:\n{e}")
                 self.update_status("Idle")
@@ -154,7 +155,7 @@ class VoIPApp:
         
         def run():
             try:
-                start_sender(target_ip, self.update_status, self.stop_event)
+                start_sender(target_ip, self.update_status, self.stop_event, self.mute_event)
             except Exception as e:
                 messagebox.showerror("Error", f"Sender failed to start:\n{e}")
                 self.update_status("Idle")
@@ -166,6 +167,14 @@ class VoIPApp:
 
     def end_call(self):
         self.stop_event.set()
+
+    def toggle_mute(self):
+        if self.mute_event.is_set():
+            self.mute_event.clear()
+            self.btn_mute.config(text="🎤 MUTE", bg="#f59e0b")
+        else:
+            self.mute_event.set()
+            self.btn_mute.config(text="🔇 UNMUTE", bg="#ef4444")
 
     def show_graph(self):
         try:

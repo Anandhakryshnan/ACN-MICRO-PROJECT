@@ -80,7 +80,7 @@ def playout_thread(sip_server, jitter_buffer):
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Playout Error: {e}")
 
-def start_receiver(status_callback=None, stop_event=None):
+def start_receiver(status_callback=None, stop_event=None, mute_event=None):
     """
     Initializes the SIP server, waits for an incoming call, 
     and starts the RTP receiving and playout threads.
@@ -111,12 +111,17 @@ def start_receiver(status_callback=None, stop_event=None):
     if status_callback:
         status_callback("In-Call")
         
+    caller_ip = sip_server.client_address[0]
+    from sender import rtp_send_thread
+        
     # pylint: disable=line-too-long
     recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_server, jitter_buffer, writer), daemon=True)
     play_thread = threading.Thread(target=playout_thread, args=(sip_server, jitter_buffer), daemon=True)
+    send_thread = threading.Thread(target=rtp_send_thread, args=(sip_server, caller_ip, stop_event, mute_event), daemon=True)
     
     recv_thread.start()
     play_thread.start()
+    send_thread.start()
     
     try:
         while sip_server.state == SIPState.IN_CALL:

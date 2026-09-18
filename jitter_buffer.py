@@ -1,6 +1,7 @@
 import queue
 import time
 import threading
+import struct
 
 class AdaptiveJitterBuffer:
     def __init__(self, alpha=0.125, beta=0.125, K=4):
@@ -23,6 +24,8 @@ class AdaptiveJitterBuffer:
         
         # Statistics for logging
         self.last_stats = None
+        self.last_payload = b'\x00' * 320
+
         
     def push(self, seq_num, send_time_ms, payload):
         recv_time_ms = time.time() * 1000
@@ -59,12 +62,17 @@ class AdaptiveJitterBuffer:
     def pop(self):
         with self.lock:
             if self.buffer.empty():
-                # Underflow: Return 20ms silence frame (320 bytes of 0x00 for 8000Hz 16-bit mono)
-                return b'\x00' * 320
+                # Underflow: Apply PLC (repeat last payload with 50% attenuation)
+                if self.last_payload != b'\x00' * 320:
+                    samples = struct.unpack(f'{len(self.last_payload)//2}h', self.last_payload)
+                    attenuated = [int(s * 0.5) for s in samples]
+                    self.last_payload = struct.pack(f'{len(attenuated)}h', *attenuated)
+                return self.last_payload
             
             # Retrieve the packet with the lowest sequence number
             packet = self.buffer.get()
             seq_num, payload, send_time_ms, recv_time_ms = packet
+            self.last_payload = payload
             return payload
 
     def get_stats(self):

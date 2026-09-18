@@ -17,7 +17,7 @@ FORMAT = 'int16'
 CHANNELS = 1
 RATE = 8000
 
-def rtp_send_thread(sip_client, target_ip, stop_event=None):
+def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None):
     """
     Captures raw audio from the microphone and transmits it to the target IP via RTP/UDP.
     """
@@ -30,7 +30,10 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None):
             while sip_client.state == SIPState.IN_CALL:
                 # Read audio data
                 payload, _ = stream.read(CHUNK)
-                payload_bytes = bytes(payload)
+                if mute_event and mute_event.is_set():
+                    payload_bytes = b'\x00' * CHUNK * 2
+                else:
+                    payload_bytes = bytes(payload)
 
                 # Precise millisecond wall-clock timestamp
                 timestamp_ms = int(time.time() * 1000)
@@ -51,7 +54,7 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None):
         udp_sock.close()
         print("RTP transmission stopped.")
 
-def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None):
+def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, mute_event=None):
     """
     Initializes the SIP client, calls the target, and starts the RTP transmission thread.
     """
@@ -82,8 +85,21 @@ def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None):
 
     print(f"Starting RTP transmission to {target_ip}...")
     # pylint: disable=line-too-long
-    rtp_thread = threading.Thread(target=rtp_send_thread, args=(sip_client, target_ip, stop_event), daemon=True)
+    rtp_thread = threading.Thread(target=rtp_send_thread, args=(sip_client, target_ip, stop_event, mute_event), daemon=True)
     rtp_thread.start()
+
+    from receiver import rtp_recv_thread, playout_thread, AdaptiveJitterBuffer
+    import csv
+    f = open('jitter_metrics.csv', 'w', newline='', buffering=1)
+    writer = csv.writer(f)
+    writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
+    
+    jitter_buffer = AdaptiveJitterBuffer()
+    recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_client, jitter_buffer, writer), daemon=True)
+    play_thread = threading.Thread(target=playout_thread, args=(sip_client, jitter_buffer), daemon=True)
+    
+    recv_thread.start()
+    play_thread.start()
 
     try:
         print("Press Ctrl+C or use UI to end the call.")
@@ -100,5 +116,6 @@ def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None):
     sip_client.hangup()
     time.sleep(1) # wait for BYE to be sent and ACK'd
     sip_client.stop()
+    f.close()
     if status_callback:
         status_callback("Idle")
