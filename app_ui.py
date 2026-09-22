@@ -5,17 +5,18 @@ import threading
 import subprocess
 import sys
 import os
+import random
 from receiver import start_receiver
 from sender import start_sender
 
 # --- Dashboard Theme ---
-BG = "#0f172a"
-CARD = "#1e293b"
-TEXT = "#f8fafc"
-MUTED = "#94a3b8"
-PRIMARY = "#3b82f6"
-PRIMARY_HOVER = "#2563eb"
-ENTRY_BG = "#0f172a"
+BG = "#050505"
+CARD = "#111111"
+TEXT = "#FFFFFF"
+MUTED = "#888888"
+PRIMARY = "#333333"
+PRIMARY_HOVER = "#555555"
+ENTRY_BG = "#000000"
 
 class DashboardButton(tk.Button):
     def __init__(self, master, **kw):
@@ -49,10 +50,26 @@ class DashboardButton(tk.Button):
 class VoIPApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("VoIP Engine Dashboard")
+        self.root.title("Spectra Voice - P2P Matrix")
         self.root.configure(bg=BG)
         # We removed the fixed geometry so Tkinter will auto-size the window to fit everything exactly.
         self.root.resizable(False, False)
+        
+        # Background Canvas for Animations
+        self.canvas = tk.Canvas(self.root, bg=BG, highlightthickness=0)
+        self.canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        
+        self.particles = []
+        for _ in range(60):
+            x = random.randint(0, 600)
+            y = random.randint(0, 800)
+            speed = random.uniform(0.5, 2.0)
+            size = random.randint(1, 3)
+            color = random.choice(["#222222", "#444444", "#666666"])
+            item = self.canvas.create_oval(x, y, x+size, y+size, fill=color, outline="")
+            self.particles.append([item, speed])
+            
+        self.animate_bg()
         
         try:
             self.local_ip = socket.gethostbyname(socket.gethostname())
@@ -63,12 +80,21 @@ class VoIPApp:
         self.mute_event = threading.Event()
         self.setup_ui()
         
+    def animate_bg(self):
+        for p in self.particles:
+            item, speed = p[0], p[1]
+            self.canvas.move(item, 0, speed)
+            pos = self.canvas.coords(item)
+            if pos and pos[1] > 800:
+                self.canvas.move(item, 0, -800 - random.randint(10, 50))
+        self.root.after(30, self.animate_bg)
+        
     def setup_ui(self):
         # Header
         header = tk.Frame(self.root, bg=BG)
         header.pack(fill="x", pady=(20, 10))
-        tk.Label(header, text="VoIP ENGINE", font=("Segoe UI Black", 22), bg=BG, fg=TEXT).pack()
-        tk.Label(header, text="Unified Communication Dashboard", font=("Segoe UI", 10), bg=BG, fg=PRIMARY).pack()
+        tk.Label(header, text="SPECTRA VOICE", font=("Segoe UI Black", 24), bg=BG, fg="#FFFFFF").pack()
+        tk.Label(header, text="Zero-Latency P2P Audio Matrix", font=("Segoe UI", 11), bg=BG, fg=MUTED).pack()
         
         # Card Container
         card = tk.Frame(self.root, bg=CARD, bd=0)
@@ -94,30 +120,30 @@ class VoIPApp:
         btn_frame = tk.Frame(card, bg=CARD)
         btn_frame.pack(pady=10)
         
-        self.btn_listen = DashboardButton(btn_frame, text="🎧 LISTEN", command=self.start_listen)
+        self.btn_listen = DashboardButton(btn_frame, text="🎧 LISTEN", bg="#3B82F6", activebackground="#2563EB", command=self.start_listen)
         self.btn_listen.grid(row=0, column=0, padx=5, pady=5, sticky="we")
         
-        self.btn_call = DashboardButton(btn_frame, text="📞 CALL", command=self.start_call)
+        self.btn_call = DashboardButton(btn_frame, text="📞 CALL", bg="#10B981", activebackground="#059669", command=self.start_call)
         self.btn_call.grid(row=0, column=1, padx=5, pady=5, sticky="we")
         
-        self.btn_mute = DashboardButton(btn_frame, text="🎤 MUTE", bg="#f59e0b", activebackground="#d97706", command=self.toggle_mute)
+        self.btn_mute = DashboardButton(btn_frame, text="🎤 MUTE", bg="#F59E0B", activebackground="#D97706", command=self.toggle_mute)
         self.btn_mute.grid(row=1, column=0, padx=5, pady=5, sticky="we")
         
-        self.btn_end = DashboardButton(btn_frame, text="🛑 END CALL", bg="#ef4444", activebackground="#dc2626", command=self.end_call)
+        self.btn_end = DashboardButton(btn_frame, text="🛑 END CALL", bg="#EF4444", activebackground="#DC2626", command=self.end_call)
         self.btn_end.grid(row=1, column=1, padx=5, pady=5, sticky="we")
         
-        self.btn_graph = DashboardButton(btn_frame, text="📊 DELAY GRAPH", bg="#10b981", activebackground="#059669", command=self.show_graph)
+        self.btn_graph = DashboardButton(btn_frame, text="📊 DELAY GRAPH", bg="#8B5CF6", activebackground="#7C3AED", command=self.show_graph)
         self.btn_graph.grid(row=2, column=0, padx=5, pady=5, sticky="we")
         
-        self.btn_jitter = DashboardButton(btn_frame, text="📉 JITTER GRAPH", bg="#8b5cf6", activebackground="#7c3aed", command=self.show_jitter_graph)
+        self.btn_jitter = DashboardButton(btn_frame, text="📉 JITTER GRAPH", bg="#EC4899", activebackground="#DB2777", command=self.show_jitter_graph)
         self.btn_jitter.grid(row=2, column=1, padx=5, pady=5, sticky="we")
 
     def update_status(self, status):
         status_map = {
             "Idle": ("● IDLE", MUTED),
-            "Listening": ("● LISTENING...", "#f59e0b"),
-            "Calling": ("● CALLING...", "#f59e0b"),
-            "In-Call": ("● IN-CALL", "#10b981")
+            "Listening": ("● LISTENING...", TEXT),
+            "Calling": ("● CALLING...", TEXT),
+            "In-Call": ("● IN-CALL", TEXT)
         }
         text, color = status_map.get(status, (status, TEXT))
         try:
@@ -129,7 +155,7 @@ class VoIPApp:
     def start_listen(self):
         self.stop_event.clear()
         self.update_status("Listening")
-        self.btn_listen.config(state="disabled", bg="#475569")
+        self.btn_listen.config(state="disabled", bg=MUTED)
         
         def run():
             try:
@@ -138,7 +164,7 @@ class VoIPApp:
                 messagebox.showerror("Error", f"Receiver failed to start:\n{e}")
                 self.update_status("Idle")
             finally:
-                self.btn_listen.config(state="normal", bg=PRIMARY)
+                self.btn_listen.config(state="normal", bg="#3B82F6")
                 
         t = threading.Thread(target=run, daemon=True)
         t.start()
@@ -151,7 +177,7 @@ class VoIPApp:
         
         self.stop_event.clear()
         self.update_status("Calling")
-        self.btn_call.config(state="disabled", bg="#475569")
+        self.btn_call.config(state="disabled", bg=MUTED)
         
         def run():
             try:
@@ -160,7 +186,7 @@ class VoIPApp:
                 messagebox.showerror("Error", f"Sender failed to start:\n{e}")
                 self.update_status("Idle")
             finally:
-                self.btn_call.config(state="normal", bg=PRIMARY)
+                self.btn_call.config(state="normal", bg="#10B981")
                 
         t = threading.Thread(target=run, daemon=True)
         t.start()
@@ -171,36 +197,28 @@ class VoIPApp:
     def toggle_mute(self):
         if self.mute_event.is_set():
             self.mute_event.clear()
-            self.btn_mute.config(text="🎤 MUTE", bg="#f59e0b")
+            self.btn_mute.config(text="🎤 MUTE", bg="#F59E0B", fg=TEXT)
         else:
             self.mute_event.set()
-            self.btn_mute.config(text="🔇 UNMUTE", bg="#ef4444")
+            self.btn_mute.config(text="🔇 UNMUTE", bg=TEXT, fg=BG)
 
     def show_graph(self):
         try:
-            # If we have data, update the image silently
+            # If we have data, show the interactive matplotlib window
             if os.path.exists("jitter_metrics.csv") and os.path.getsize("jitter_metrics.csv") > 0:
-                subprocess.run([sys.executable, "plot_metrics.py"], check=False)
-                
-            # Now show the image
-            if os.path.exists("jitter_analysis.png"):
-                os.startfile("jitter_analysis.png")
+                subprocess.Popen([sys.executable, "plot_metrics.py"])
             else:
-                messagebox.showwarning("No Image", "No graph image found. Please make a call first.")
+                messagebox.showwarning("No Data", "No graph data found. Please make a call first.")
         except Exception as e:
             messagebox.showerror("Error", f"Could not show graph: {e}")
 
     def show_jitter_graph(self):
         try:
-            # If we have data, update the image silently
+            # If we have data, show the interactive matplotlib window
             if os.path.exists("jitter_metrics.csv") and os.path.getsize("jitter_metrics.csv") > 0:
-                subprocess.run([sys.executable, "plot_jitter.py"], check=False)
-                
-            # Now show the image
-            if os.path.exists("jitter_variance.png"):
-                os.startfile("jitter_variance.png")
+                subprocess.Popen([sys.executable, "plot_jitter.py"])
             else:
-                messagebox.showwarning("No Image", "No graph image found. Please make a call first.")
+                messagebox.showwarning("No Data", "No graph data found. Please make a call first.")
         except Exception as e:
             messagebox.showerror("Error", f"Could not show jitter graph: {e}")
 

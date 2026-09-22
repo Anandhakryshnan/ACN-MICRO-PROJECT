@@ -69,6 +69,10 @@ class AdaptiveJitterBuffer:
                     self.last_payload = struct.pack(f'{len(attenuated)}h', *attenuated)
                 return self.last_payload
             
+            # Catch up if buffer is too large (e.g., > 8 packets = 160ms delay) to prevent lag build-up
+            while self.buffer.qsize() > 8:
+                self.buffer.get() # Discard oldest packet
+                
             # Retrieve the packet with the lowest sequence number
             packet = self.buffer.get()
             seq_num, payload, send_time_ms, recv_time_ms = packet

@@ -39,8 +39,7 @@ def main():
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    plt.savefig('jitter_analysis.png', dpi=300)
-    print("Plot saved to jitter_analysis.png")
+    plt.show()
 
 if __name__ == "__main__":
     main()

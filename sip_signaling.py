@@ -106,7 +106,23 @@ class SIPClient(SIPNode):
     def call(self, target_host, target_port=5060):
         self.target_address = (target_host, target_port)
         self.state = SIPState.CALLING
-        self.send_message(target_host, target_port, "INVITE")
+        
+        def retry_invite():
+            for _ in range(5):
+                if self.state != SIPState.CALLING or not self.running:
+                    break
+                self.send_message(target_host, target_port, "INVITE")
+                # Wait up to 1 second for a state change (200 OK)
+                for _ in range(10):
+                    if self.state != SIPState.CALLING or not self.running:
+                        break
+                    time.sleep(0.1)
+            
+            if self.state == SIPState.CALLING:
+                print("Call failed: No response to INVITE after retries.")
+                self.state = SIPState.ENDED
+                
+        threading.Thread(target=retry_invite, daemon=True).start()
         
     def hangup(self):
         if self.state == SIPState.IN_CALL and self.target_address:

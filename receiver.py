@@ -9,6 +9,7 @@ import threading
 import time
 import csv
 import sounddevice as sd
+import zlib
 
 from sip_signaling import SIPServer, SIPState
 from rtp_helper import unpack_rtp_packet
@@ -37,6 +38,11 @@ def rtp_recv_thread(sip_server, jitter_buffer, writer):
             try:
                 packet, _ = udp_sock.recvfrom(2048)
                 seq_num, send_time_32, payload = unpack_rtp_packet(packet)
+                
+                try:
+                    payload = zlib.decompress(payload)
+                except zlib.error:
+                    continue # Skip corrupted packets
                 
                 # Push to jitter buffer
                 jitter_buffer.push(seq_num, send_time_32, payload)
@@ -69,7 +75,7 @@ def playout_thread(sip_server, jitter_buffer):
     print("Starting audio playout...")
     
     try:
-        with sd.RawOutputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK) as stream:
+        with sd.RawOutputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK, latency='low') as stream:
             while sip_server.state == SIPState.IN_CALL:
                 # Pop 20ms of audio from jitter buffer
                 audio_data = jitter_buffer.pop()
