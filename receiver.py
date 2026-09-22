@@ -72,21 +72,27 @@ def playout_thread(sip_server, jitter_buffer):
     """
     Pulls 20ms audio frames from the jitter buffer and writes them to the audio output stream.
     """
+    import numpy as np
     print("Starting audio playout...")
     
     try:
-        with sd.RawOutputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK, latency='low') as stream:
+        # Removed latency='low' to let the OS negotiate a safe buffer, fixing audio driver crashes
+        with sd.RawOutputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK) as stream:
             while sip_server.state == SIPState.IN_CALL:
                 # Pop 20ms of audio from jitter buffer
                 audio_data = jitter_buffer.pop()
                 
-                # stream.write is blocking, ensuring correct timing
-                stream.write(audio_data)
+                # Apply 4x digital gain to boost quiet microphones
+                samples = np.frombuffer(audio_data, dtype=np.int16)
+                # Use int32 to prevent overflow during multiplication, then clip and cast back
+                amplified = np.clip(samples.astype(np.int32) * 4, -32768, 32767).astype(np.int16)
+                
+                stream.write(amplified.tobytes())
                 
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Playout Error: {e}")
 
-def start_receiver(status_callback=None, stop_event=None, mute_event=None):
+def start_receiver(status_callback=None, stop_event=None, mute_event=None, packet_callback=None):
     """
     Initializes the SIP server, waits for an incoming call, 
     and starts the RTP receiving and playout threads.
@@ -133,6 +139,8 @@ def start_receiver(status_callback=None, stop_event=None, mute_event=None):
         while sip_server.state == SIPState.IN_CALL:
             if stop_event and stop_event.is_set():
                 break
+            if packet_callback:
+                packet_callback(jitter_buffer.total_packets)
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass

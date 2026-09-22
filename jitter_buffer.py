@@ -20,17 +20,20 @@ class AdaptiveJitterBuffer:
         self.buffer = queue.PriorityQueue()
         self.lock = threading.Lock()
         
+        self.current_jitter = 0.0
+        self.total_packets = 0
         self.first_packet = True
         
-        # Statistics for logging
+        # Stats tracking for logging
         self.last_stats = None
         self.last_payload = b'\x00' * 320
 
         
     def push(self, seq_num, send_time_ms, payload):
-        recv_time_ms = time.time() * 1000
-        
         with self.lock:
+            self.total_packets += 1
+            recv_time_ms = int(time.time() * 1000)
+            
             # Calculate transit delay (n_i)
             self.n_i = recv_time_ms - send_time_ms
             

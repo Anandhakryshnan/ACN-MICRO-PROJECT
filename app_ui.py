@@ -8,6 +8,7 @@ import os
 import random
 from receiver import start_receiver
 from sender import start_sender
+from p2p_session import start_p2p
 
 # --- Dashboard Theme ---
 BG = "#050505"
@@ -114,17 +115,17 @@ class VoIPApp:
         
         tk.Label(card, text="CALL STATUS", font=("Segoe UI", 9, "bold"), bg=CARD, fg=MUTED).pack(pady=(0, 2))
         self.status_label = tk.Label(card, text="● IDLE", font=("Segoe UI", 12, "bold"), bg=CARD, fg=MUTED)
-        self.status_label.pack(pady=(0, 20))
+        self.status_label.pack(pady=(0, 5))
+        
+        self.packet_label = tk.Label(card, text="Packets Received: 0", font=("Segoe UI", 9, "bold"), bg=CARD, fg=MUTED)
+        self.packet_label.pack(pady=(0, 20))
         
         # Buttons - Grid Layout
         btn_frame = tk.Frame(card, bg=CARD)
         btn_frame.pack(pady=10)
         
-        self.btn_listen = DashboardButton(btn_frame, text="🎧 LISTEN", bg="#3B82F6", activebackground="#2563EB", command=self.start_listen)
-        self.btn_listen.grid(row=0, column=0, padx=5, pady=5, sticky="we")
-        
-        self.btn_call = DashboardButton(btn_frame, text="📞 CALL", bg="#10B981", activebackground="#059669", command=self.start_call)
-        self.btn_call.grid(row=0, column=1, padx=5, pady=5, sticky="we")
+        self.btn_connect = DashboardButton(btn_frame, text="🚀 CONNECT", bg="#3B82F6", activebackground="#2563EB", command=self.start_connect)
+        self.btn_connect.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="we")
         
         self.btn_mute = DashboardButton(btn_frame, text="🎤 MUTE", bg="#F59E0B", activebackground="#D97706", command=self.toggle_mute)
         self.btn_mute.grid(row=1, column=0, padx=5, pady=5, sticky="we")
@@ -152,41 +153,32 @@ class VoIPApp:
         except Exception:
             pass
 
-    def start_listen(self):
-        self.stop_event.clear()
-        self.update_status("Listening")
-        self.btn_listen.config(state="disabled", bg=MUTED)
-        
-        def run():
-            try:
-                start_receiver(self.update_status, self.stop_event, self.mute_event)
-            except Exception as e:
-                messagebox.showerror("Error", f"Receiver failed to start:\n{e}")
-                self.update_status("Idle")
-            finally:
-                self.btn_listen.config(state="normal", bg="#3B82F6")
-                
-        t = threading.Thread(target=run, daemon=True)
-        t.start()
+    def update_packets(self, count):
+        try:
+            if self.root.winfo_exists():
+                self.root.after(0, lambda: self.packet_label.config(text=f"Packets Received: {count}", fg="#10B981" if count > 0 else MUTED))
+        except Exception:
+            pass
 
-    def start_call(self):
+    def start_connect(self):
         target_ip = self.target_ip_entry.get().strip()
         if not target_ip:
             messagebox.showerror("Error", "Please enter a Target IP Address")
             return
-        
+            
         self.stop_event.clear()
-        self.update_status("Calling")
-        self.btn_call.config(state="disabled", bg=MUTED)
+        self.update_status("Connecting")
+        self.btn_connect.config(state="disabled", bg=MUTED)
+        self.update_packets(0)
         
         def run():
             try:
-                start_sender(target_ip, self.update_status, self.stop_event, self.mute_event)
+                start_p2p(target_ip, self.update_status, self.stop_event, self.mute_event, self.update_packets)
             except Exception as e:
-                messagebox.showerror("Error", f"Sender failed to start:\n{e}")
+                messagebox.showerror("Error", f"Connection failed:\n{e}")
                 self.update_status("Idle")
             finally:
-                self.btn_call.config(state="normal", bg="#10B981")
+                self.btn_connect.config(state="normal", bg="#3B82F6")
                 
         t = threading.Thread(target=run, daemon=True)
         t.start()

@@ -27,7 +27,8 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None):
     ssrc = 98765
 
     try:
-        with sd.RawInputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK, latency='low') as stream:
+        # Removed latency='low' to allow OS to pick a safe buffer size, fixing Realtek crash issues
+        with sd.RawInputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK) as stream:
             while sip_client.state == SIPState.IN_CALL and not (stop_event and stop_event.is_set()):
                 # Read audio data
                 payload, _ = stream.read(CHUNK)
@@ -58,7 +59,7 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None):
         udp_sock.close()
         print("RTP transmission stopped.")
 
-def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, mute_event=None):
+def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, mute_event=None, packet_callback=None):
     """
     Initializes the SIP client, calls the target, and starts the RTP transmission thread.
     """
@@ -88,31 +89,35 @@ def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, m
         status_callback("In-Call")
 
     print(f"Starting RTP transmission to {target_ip}...")
-    # pylint: disable=line-too-long
-    rtp_thread = threading.Thread(target=rtp_send_thread, args=(sip_client, target_ip, stop_event, mute_event), daemon=True)
-    rtp_thread.start()
-
+    
     from receiver import rtp_recv_thread, playout_thread, AdaptiveJitterBuffer
     import csv
-    f = open('jitter_metrics.csv', 'w', newline='', buffering=1)
-    writer = csv.writer(f)
-    writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
     
     jitter_buffer = AdaptiveJitterBuffer()
-    recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_client, jitter_buffer, writer), daemon=True)
-    play_thread = threading.Thread(target=playout_thread, args=(sip_client, jitter_buffer), daemon=True)
-    
-    recv_thread.start()
-    play_thread.start()
 
-    try:
-        print("Press Ctrl+C or use UI to end the call.")
-        while sip_client.state == SIPState.IN_CALL:
-            if stop_event and stop_event.is_set():
-                break
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        pass
+    with open('jitter_metrics.csv', 'w', newline='', buffering=1) as f:
+        writer = csv.writer(f)
+        writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
+        
+        recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_client, jitter_buffer, writer), daemon=True)
+        recv_thread.start()
+        
+        rtp_thread = threading.Thread(target=rtp_send_thread, args=(sip_client, target_ip, stop_event, mute_event), daemon=True)
+        rtp_thread.start()
+        
+        playout = threading.Thread(target=playout_thread, args=(sip_client, jitter_buffer), daemon=True)
+        playout.start()
+        
+        try:
+            print("Press Ctrl+C or use UI to end the call.")
+            while sip_client.state == SIPState.IN_CALL:
+                if stop_event and stop_event.is_set():
+                    break
+                if packet_callback:
+                    packet_callback(jitter_buffer.total_packets)
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
 
     print("\nHanging up...")
     sip_client.state = SIPState.ENDED
@@ -120,6 +125,5 @@ def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, m
     sip_client.hangup()
     time.sleep(1) # wait for BYE to be sent and ACK'd
     sip_client.stop()
-    f.close()
     if status_callback:
         status_callback("Idle")
