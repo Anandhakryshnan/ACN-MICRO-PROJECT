@@ -33,12 +33,17 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None, udp
         # Removed latency='low' to allow OS to pick a safe buffer size, fixing Realtek crash issues
         with sd.RawInputStream(samplerate=RATE, channels=CHANNELS, dtype=FORMAT, blocksize=CHUNK) as stream:
             while sip_client.state == SIPState.IN_CALL and not (stop_event and stop_event.is_set()):
-                # Read audio data
-                payload, _ = stream.read(CHUNK)
-                if mute_event and mute_event.is_set():
+                try:
+                    # Read audio data
+                    payload, _ = stream.read(CHUNK)
+                    if mute_event and mute_event.is_set():
+                        payload_bytes = b'\x00' * CHUNK * 2
+                    else:
+                        payload_bytes = bytes(payload)
+                except Exception as e:
+                    # If microphone fails (e.g. privacy settings, no device), send silence instead of dying
+                    print(f"Microphone read error: {e}")
                     payload_bytes = b'\x00' * CHUNK * 2
-                else:
-                    payload_bytes = bytes(payload)
 
                 # Compress payload
                 payload_bytes = zlib.compress(payload_bytes)
