@@ -10,6 +10,13 @@ def start_p2p(target_ip, status_callback=None, stop_event=None, mute_event=None,
     """
     Symmetrically negotiates a P2P call by listening on 5060 and actively calling target_ip:5060.
     """
+    # Bind RTP socket early to ensure it's ready before remote device sends packets,
+    # preventing ICMP Port Unreachable which causes WinError 10054 crashes on older clients.
+    rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    rtp_sock.bind(('0.0.0.0', 5005))
+    rtp_sock.settimeout(1.0)
+
     # Start SIP Server to listen for incoming calls
     sip_server = SIPServer(host='0.0.0.0', port=5060)
     sip_server.start()
@@ -55,6 +62,7 @@ def start_p2p(target_ip, status_callback=None, stop_event=None, mute_event=None,
     if not active_sip or (stop_event and stop_event.is_set()):
         sip_server.stop()
         sip_client.stop()
+        rtp_sock.close()
         if status_callback:
             status_callback("Idle")
         return
@@ -67,11 +75,6 @@ def start_p2p(target_ip, status_callback=None, stop_event=None, mute_event=None,
     with open('jitter_metrics.csv', 'w', newline='', buffering=1) as f:
         writer = csv.writer(f)
         writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
-        
-        rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        rtp_sock.bind(('0.0.0.0', 5005))
-        rtp_sock.settimeout(1.0)
         
         # Start RTP Threads
         recv_thread = threading.Thread(target=rtp_recv_thread, args=(active_sip, jitter_buffer, writer, rtp_sock), daemon=True)
