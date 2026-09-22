@@ -89,4 +89,5 @@ def playout_thread(sip_server, jitter_buffer):
                 stream.write(amplified.tobytes())
                 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Playout Error: {e}")
+        if "Stream is stopped" not in str(e):
+            print(f"Playout Error: {e}")

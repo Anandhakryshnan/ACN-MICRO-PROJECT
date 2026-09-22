@@ -37,7 +37,9 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None, udp
                         payload_bytes = bytes(payload)
                 except Exception as e:
                     # If microphone fails (e.g. privacy settings, no device), send silence instead of dying
-                    print(f"Microphone read error: {e}")
+                    # Do not print "Stream is stopped" as it happens during app shutdown and crashes the stdout buffer
+                    if "Stream is stopped" not in str(e):
+                        print(f"Microphone read error: {e}")
                     payload_bytes = b'\x00' * CHUNK * 2
 
                 # Compress payload
