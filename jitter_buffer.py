@@ -1,7 +1,7 @@
 import queue
 import time
 import threading
-import struct
+import numpy as np
 
 class AdaptiveJitterBuffer:
     def __init__(self, alpha=0.125, beta=0.125, K=4):
@@ -70,11 +70,11 @@ class AdaptiveJitterBuffer:
     def pop(self):
         with self.lock:
             if self.buffer.empty():
-                # Underflow: Apply PLC (repeat last payload with 50% attenuation)
+                # Underflow: Apply PLC (repeat last payload with smooth 85% attenuation curve)
                 if self.last_payload != b'\x00' * 320:
-                    samples = struct.unpack(f'{len(self.last_payload)//2}h', self.last_payload)
-                    attenuated = [int(s * 0.5) for s in samples]
-                    self.last_payload = struct.pack(f'{len(attenuated)}h', *attenuated)
+                    samples = np.frombuffer(self.last_payload, dtype=np.int16)
+                    attenuated = (samples * 0.85).astype(np.int16)
+                    self.last_payload = attenuated.tobytes()
                 return self.last_payload
             
             # Catch up if buffer is too large (e.g., > 8 packets = 160ms delay) to prevent lag build-up
