@@ -46,7 +46,7 @@ class SIPServer(SIPNode):
             except socket.timeout:
                 continue
             except Exception as e:
-                if self.running:
+                if self.running and "10054" not in str(e):
                     print(f"SIP Server error: {e}")
                     
     def _handle_message(self, msg, addr):
@@ -96,7 +96,7 @@ class SIPClient(SIPNode):
             except socket.timeout:
                 continue
             except Exception as e:
-                if self.running:
+                if self.running and "10054" not in str(e):
                     print(f"SIP Client error: {e}")
                     
     def _handle_message(self, msg, addr):
