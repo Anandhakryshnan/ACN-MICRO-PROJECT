@@ -50,7 +50,11 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None, udp
                 timestamp_32 = timestamp_ms & 0xFFFFFFFF
 
                 packet = create_rtp_packet(seq_num, timestamp_32, payload_bytes, ssrc)
-                udp_sock.sendto(packet, (target_ip, 5005))
+                try:
+                    udp_sock.sendto(packet, (target_ip, 5005))
+                except Exception as e:
+                    # Ignore transient network errors like WinError 10054 (ICMP Port Unreachable)
+                    pass
 
                 seq_num = (seq_num + 1) % 65536
 

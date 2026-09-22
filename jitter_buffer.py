@@ -33,9 +33,14 @@ class AdaptiveJitterBuffer:
         with self.lock:
             self.total_packets += 1
             recv_time_ms = int(time.time() * 1000)
+            recv_time_32 = recv_time_ms & 0xFFFFFFFF
             
             # Calculate transit delay (n_i)
-            self.n_i = recv_time_ms - send_time_ms
+            # Handle 32-bit wraparound
+            diff = (recv_time_32 - send_time_ms) & 0xFFFFFFFF
+            if diff > 0x7FFFFFFF:
+                diff -= 0x100000000
+            self.n_i = diff
             
             # Ramjee's algorithm
             if self.first_packet:
