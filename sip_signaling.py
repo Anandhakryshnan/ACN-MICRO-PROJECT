@@ -65,6 +65,11 @@ class SIPServer(SIPNode):
             self.send_message(addr[0], addr[1], "200 OK")
             print("Call ended.")
             
+    def hangup(self):
+        if self.state == SIPState.IN_CALL and self.client_address:
+            self.state = SIPState.ENDED
+            self.send_message(self.client_address[0], self.client_address[1], "BYE")
+            
     def stop(self):
         self.running = False
         self.sock.close()
@@ -102,6 +107,10 @@ class SIPClient(SIPNode):
             print("Call established!")
         elif msg == "200 OK" and self.state == SIPState.ENDED:
             print("Call gracefully ended.")
+        elif msg == "BYE":
+            self.state = SIPState.ENDED
+            self.send_message(addr[0], addr[1], "200 OK")
+            print("Call ended by remote host.")
             
     def call(self, target_host, target_port=5060):
         self.target_address = (target_host, target_port)

@@ -94,11 +94,12 @@ def start_p2p(target_ip, status_callback=None, stop_event=None, mute_event=None,
             pass
 
     print("\nHanging up...")
-    active_sip.state = SIPState.ENDED
-
-    if active_sip == sip_client:
-        active_sip.hangup()
-        time.sleep(1)
+    
+    # Send BYE message to gracefully end the call on the other side
+    active_sip.hangup()
+    
+    # Give it a second to send the packet
+    time.sleep(1)
         
     active_sip.stop()
     if status_callback:
