@@ -18,11 +18,14 @@ FORMAT = 'int16'
 CHANNELS = 1
 RATE = 8000
 
-def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None):
+def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None, udp_sock=None):
     """
     Captures raw audio from the microphone and transmits it to the target IP via RTP/UDP.
     """
-    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    own_sock = False
+    if udp_sock is None:
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        own_sock = True
     seq_num = 0
     ssrc = 98765
 
@@ -56,7 +59,8 @@ def rtp_send_thread(sip_client, target_ip, stop_event=None, mute_event=None):
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"RTP Error: {e}")
     finally:
-        udp_sock.close()
+        if own_sock:
+            udp_sock.close()
         print("RTP transmission stopped.")
 
 def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, mute_event=None, packet_callback=None):
@@ -99,10 +103,15 @@ def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, m
         writer = csv.writer(f)
         writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
         
-        recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_client, jitter_buffer, writer), daemon=True)
+        rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        rtp_sock.bind(('0.0.0.0', 5005))
+        rtp_sock.settimeout(1.0)
+        
+        recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_client, jitter_buffer, writer, rtp_sock), daemon=True)
         recv_thread.start()
         
-        rtp_thread = threading.Thread(target=rtp_send_thread, args=(sip_client, target_ip, stop_event, mute_event), daemon=True)
+        rtp_thread = threading.Thread(target=rtp_send_thread, args=(sip_client, target_ip, stop_event, mute_event, rtp_sock), daemon=True)
         rtp_thread.start()
         
         playout = threading.Thread(target=playout_thread, args=(sip_client, jitter_buffer), daemon=True)
@@ -125,5 +134,6 @@ def start_sender(target_ip='127.0.0.1', status_callback=None, stop_event=None, m
     sip_client.hangup()
     time.sleep(1) # wait for BYE to be sent and ACK'd
     sip_client.stop()
+    rtp_sock.close()
     if status_callback:
         status_callback("Idle")

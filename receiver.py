@@ -21,15 +21,18 @@ FORMAT = 'int16'
 CHANNELS = 1
 RATE = 8000
 
-def rtp_recv_thread(sip_server, jitter_buffer, writer):
+def rtp_recv_thread(sip_server, jitter_buffer, writer, udp_sock=None):
     """
     Listens for incoming RTP packets on UDP port 5005, unpacks them, 
     and pushes them into the adaptive jitter buffer.
     """
-    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    udp_sock.bind(('0.0.0.0', 5005))
-    udp_sock.settimeout(1.0)
+    own_sock = False
+    if udp_sock is None:
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp_sock.bind(('0.0.0.0', 5005))
+        udp_sock.settimeout(1.0)
+        own_sock = True
     
     print("Listening for RTP packets...")
 
@@ -65,7 +68,8 @@ def rtp_recv_thread(sip_server, jitter_buffer, writer):
             except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"RTP Recv Error: {e}")
     finally:
-        udp_sock.close()
+        if own_sock:
+            udp_sock.close()
         print("RTP receiving stopped.")
 
 def playout_thread(sip_server, jitter_buffer):
@@ -126,10 +130,15 @@ def start_receiver(status_callback=None, stop_event=None, mute_event=None, packe
     caller_ip = sip_server.client_address[0]
     from sender import rtp_send_thread
         
+    rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    rtp_sock.bind(('0.0.0.0', 5005))
+    rtp_sock.settimeout(1.0)
+
     # pylint: disable=line-too-long
-    recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_server, jitter_buffer, writer), daemon=True)
+    recv_thread = threading.Thread(target=rtp_recv_thread, args=(sip_server, jitter_buffer, writer, rtp_sock), daemon=True)
     play_thread = threading.Thread(target=playout_thread, args=(sip_server, jitter_buffer), daemon=True)
-    send_thread = threading.Thread(target=rtp_send_thread, args=(sip_server, caller_ip, stop_event, mute_event), daemon=True)
+    send_thread = threading.Thread(target=rtp_send_thread, args=(sip_server, caller_ip, stop_event, mute_event, rtp_sock), daemon=True)
     
     recv_thread.start()
     play_thread.start()
@@ -150,6 +159,7 @@ def start_receiver(status_callback=None, stop_event=None, mute_event=None, packe
         
     time.sleep(1)
     sip_server.stop()
+    rtp_sock.close()
     f.close()
     print("Receiver shut down cleanly.")
     if status_callback:

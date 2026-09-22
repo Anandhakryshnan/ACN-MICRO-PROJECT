@@ -68,15 +68,20 @@ def start_p2p(target_ip, status_callback=None, stop_event=None, mute_event=None,
         writer = csv.writer(f)
         writer.writerow(['seq_num', 'send_time', 'recv_time', 'transit_delay', 'moving_delay', 'jitter', 'playout_target'])
         
+        rtp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        rtp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        rtp_sock.bind(('0.0.0.0', 5005))
+        rtp_sock.settimeout(1.0)
+        
         # Start RTP Threads
-        recv_thread = threading.Thread(target=rtp_recv_thread, args=(active_sip, jitter_buffer, writer), daemon=True)
+        recv_thread = threading.Thread(target=rtp_recv_thread, args=(active_sip, jitter_buffer, writer, rtp_sock), daemon=True)
         recv_thread.start()
         
         # If we are the Server, the caller's IP is in active_sip.client_address[0]
         # If we are the Client, the target IP is target_ip
         remote_ip = active_sip.client_address[0] if active_sip == sip_server else target_ip
         
-        rtp_thread = threading.Thread(target=rtp_send_thread, args=(active_sip, remote_ip, stop_event, mute_event), daemon=True)
+        rtp_thread = threading.Thread(target=rtp_send_thread, args=(active_sip, remote_ip, stop_event, mute_event, rtp_sock), daemon=True)
         rtp_thread.start()
         
         playout = threading.Thread(target=playout_thread, args=(active_sip, jitter_buffer), daemon=True)
@@ -102,5 +107,9 @@ def start_p2p(target_ip, status_callback=None, stop_event=None, mute_event=None,
     time.sleep(1)
         
     active_sip.stop()
+    try:
+        rtp_sock.close()
+    except Exception:
+        pass
     if status_callback:
         status_callback("Idle")
