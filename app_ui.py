@@ -6,8 +6,6 @@ import subprocess
 import sys
 import os
 import random
-from receiver import start_receiver
-from sender import start_sender
 from p2p_session import start_p2p
 
 # --- Dashboard Theme ---
