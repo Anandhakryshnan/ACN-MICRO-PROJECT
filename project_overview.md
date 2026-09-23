@@ -1,69 +1,87 @@
-# ACN Micro Project: P2P VoIP Application Overview
+# ACN Micro Project: Spectra Voice - Zero-Latency P2P Matrix
 
-This document provides a clear, high-level overview of how the Spectra Voice P2P VoIP application works under the hood. It is designed to help team members quickly understand the project's architecture, the flow of a call, and what each file is responsible for.
-
----
-
-## 1. High-Level Architecture
-
-At its core, this application is a **Peer-to-Peer (P2P)** network program. Instead of routing audio through a central server (like Discord or Skype do), the two computers talk directly to each other over the local Wi-Fi or LAN.
-
-A phone call in this application consists of two distinct phases:
-1. **The Handshake (SIP):** Negotiating the connection before the call starts.
-2. **The Audio Stream (RTP):** Continuously sending and receiving microphone data in real-time.
+This document provides a highly detailed, comprehensive overview of the Spectra Voice P2P VoIP application. It is designed to be the definitive technical guide for campus presentations, explaining the exact logic, algorithms, and engineering decisions implemented in every module of the project.
 
 ---
 
-## 2. File-by-File Breakdown
+## 1. System Architecture: The Peer-to-Peer Model
 
-Here is exactly what each file in the project does:
+Unlike traditional VoIP applications (like Discord or Skype) that act as a middleman by routing audio through a centralized server, this application uses a pure **Peer-to-Peer (P2P)** architecture. 
 
-### 🖥️ User Interface & Controller
-*   **[`app_ui.py`](file:///d:/ACN%20MICRO%20PROJECT/app_ui.py)**: The entry point of the application. It runs the Tkinter graphical dashboard, handles user inputs (like IP addresses), and visualizes the call status.
-*   **[`p2p_session.py`](file:///d:/ACN%20MICRO%20PROJECT/p2p_session.py)**: The master controller. When you click "Connect" in the UI, this script wires everything together. It starts the SIP handshake and, once successful, launches the audio sending and receiving threads.
+In this model, two endpoints (computers) communicate directly with each other over the Local Area Network (LAN) or Wi-Fi. This completely eliminates server processing latency, resulting in true zero-latency audio transmission.
 
-### 🤝 The Handshake (SIP)
-*   **[`sip_signaling.py`](file:///d:/ACN%20MICRO%20PROJECT/sip_signaling.py)**: Implements a lightweight, custom version of the **Session Initiation Protocol (SIP)**. 
-    *   It uses **TCP/UDP ports 5060 & 5061** to send `INVITE`, `200 OK`, and `ACK` messages.
-    *   It also contains logic to handle "collisions" (when both users click connect at the exact same time) by deterministically assigning one user as the Caller and the other as the Receiver.
-
-### 🎙️ The Audio Stream (RTP)
-Once the SIP handshake is successful, the application transitions to the **Real-time Transport Protocol (RTP)** phase. Three independent threads spin up on both computers simultaneously:
-
-*   **[`sender.py`](file:///d:/ACN%20MICRO%20PROJECT/sender.py)**: 
-    1.  Records audio from your physical microphone using the `sounddevice` library.
-    2.  Chops the continuous audio into tiny 20-millisecond chunks.
-    3.  Compresses the audio using `zlib` to save bandwidth.
-    4.  Passes it to `rtp_helper.py` to wrap it in an RTP header (adding a sequence number and timestamp).
-    5.  Fires the packet across the network via **UDP port 5005**.
-*   **[`receiver.py`](file:///d:/ACN%20MICRO%20PROJECT/receiver.py)**: 
-    1.  Continuously listens on **UDP port 5005** for incoming packets from the other person.
-    2.  Decompresses the payload and hands the raw audio packet over to the **Jitter Buffer**.
-    3.  Runs a separate "Playout" thread that constantly reads smoothed-out audio from the Jitter Buffer and plays it through your speakers.
-
-### 🧠 Network Intelligence
-*   **[`jitter_buffer.py`](file:///d:/ACN%20MICRO%20PROJECT/jitter_buffer.py)**: The brains of the receiver. Because Wi-Fi networks are unreliable, packets might arrive out of order, delayed, or clumped together (network jitter).
-    *   It uses **Ramjee's Algorithm** to dynamically calculate the network delay.
-    *   It holds packets in a priority queue (sorted by sequence number) to reorder them chronologically.
-    *   If a packet is lost, it uses Packet Loss Concealment (PLC) to artificially play a fading sound, preventing the audio from abruptly popping or clicking.
-
-### ⚙️ Utilities
-*   **[`audio_config.py`](file:///d:/ACN%20MICRO%20PROJECT/audio_config.py)**: A centralized configuration file that holds audio constants (e.g., 8000 Hz Sample Rate, 1 channel, Int16 format). Ensuring both sender and receiver use the exact same audio settings is critical.
-*   **[`rtp_helper.py`](file:///d:/ACN%20MICRO%20PROJECT/rtp_helper.py)**: Contains helper functions to pack and unpack raw bytes into RTP headers, allowing the application to attach sequence numbers and timestamps to the raw audio.
-*   **`plot_metrics.py`** & **`plot_jitter.py`**: Helper scripts that read from `jitter_metrics.csv` to generate matplotlib graphs of network latency and buffer performance after a call ends.
+The system is logically split into two completely separate sub-systems that run sequentially:
+1. **The Signaling Plane (SIP over UDP):** Responsible for locating the peer, ringing them, resolving call collisions, and establishing the session parameters before any audio is sent.
+2. **The Media Plane (RTP over UDP):** Responsible for the real-time capture, compression, packetization, and transmission of raw audio data, as well as handling network unreliability via Jitter Buffering.
 
 ---
 
-## 3. The Lifecycle of a Call
+## 2. In-Depth Module Breakdown
 
-To summarize the flow from scratch:
+Below is a detailed explanation of every file and how it operates in the ecosystem.
 
-1.  **Start:** Both users open `app_ui.py`.
-2.  **Dialing:** User A enters User B's IP address and clicks "Connect".
-3.  **SIP Phase:** `p2p_session.py` tells `sip_signaling.py` to send an `INVITE` packet to User B. User B responds with `200 OK`. User A acknowledges with `ACK`.
-4.  **RTP Phase:** 
-    *   User A's `sender.py` starts recording and throwing UDP packets at User B.
-    *   User A's `receiver.py` starts listening for UDP packets from User B.
-    *   (User B is doing the exact same thing simultaneously).
-5.  **Playout:** Incoming packets hit the `jitter_buffer.py` to be sorted, then get played through the speakers.
-6.  **End:** When a user clicks "End Call", a SIP `BYE` message is sent, and all audio threads gracefully shut down.
+### 2.1. User Interface (`app_ui.py`)
+The application starts here. The UI is built using Python's standard `tkinter` library, but heavily customized for a modern aesthetic.
+* **Animated Canvas:** It uses an infinite recursive loop (`animate_bg()`) updating canvas coordinates to create a floating particle effect in the background, making the UI feel alive.
+* **Thread Safety:** The Tkinter `mainloop()` must run on the main thread and blocks it. Therefore, all networking and audio logic are spawned on background `daemon=True` threads. To prevent the background threads from crashing the UI when they need to update the screen (e.g., changing status to "In-Call"), we use thread-safe lambda functions scheduled via `root.after(0, ...)`.
+* **State Management:** It uses `threading.Event()` objects (`stop_event` and `mute_event`) to communicate state changes (like hanging up or muting the mic) instantly to the deeply nested audio threads.
+
+### 2.2. Master Controller (`p2p_session.py`)
+When a user clicks "Connect", `p2p_session.py` takes over to establish the call.
+* **Symmetric Negotiation:** To solve the classic P2P problem of "who is the server and who is the client?", this module starts both simultaneously. 
+  * It spawns a `SIPServer` thread listening on port 5060.
+  * It spawns a `SIPClient` thread that repeatedly tries to call the target IP on port 5060 (from its own port 5061).
+* **Collision Resolution:** If both users click connect at the exact same millisecond, both clients fire packets at both servers. Whichever server processes the packet first becomes the active receiver, and the other side acts as the active caller, preventing a deadlock.
+* **Early Socket Binding:** To prevent OS-level `WinError 10054 (ICMP Port Unreachable)` crashes, the UDP media socket (port 5005) is bound *before* the call is even established, guaranteeing the socket is ready to receive data the microsecond the call starts.
+
+### 2.3. The Signaling Protocol (`sip_signaling.py`)
+We implemented a lightweight, custom version of the **Session Initiation Protocol (SIP)** over UDP.
+* It operates as a deterministic State Machine: `IDLE` -> `CALLING` -> `IN_CALL` -> `ENDED`.
+* **The Handshake:** 
+  1. **Client** sends `INVITE`.
+  2. **Server** receives `INVITE`, transitions to `CALLING`, and replies with `200 OK`.
+  3. **Client** receives `200 OK`, transitions to `IN_CALL`, and replies with `ACK`.
+  4. **Server** receives `ACK` and transitions to `IN_CALL`. 
+* **Teardown:** When a user ends the call, a `BYE` message is sent, forcing both state machines into `ENDED` and terminating all audio loops.
+
+### 2.4. Audio Configuration (`audio_config.py`)
+Defines the strict mathematical constants required for the VoIP stream:
+* **`RATE = 8000` Hz**: The industry standard for human voice (telephone quality). It limits bandwidth while preserving speech intelligibility.
+* **`CHANNELS = 1`**: Mono audio.
+* **`FORMAT = 'int16'`**: 16-bit PCM audio depth.
+* **`CHUNK = 160`**: Exactly 20 milliseconds of audio (8000 Hz / 50 frames per second = 160 samples per chunk).
+
+### 2.5. Audio Sender & Compression (`sender.py`)
+This thread is responsible for pushing your voice onto the network.
+* **Hardware Interface:** Uses `sounddevice.RawInputStream` to pull 20ms blocks of raw electrical signals from the physical microphone.
+* **Privacy Failsafe:** If Windows blocks microphone access for privacy reasons, `sounddevice` will throw an exception. Instead of crashing, the exception is caught, and the program seamlessly substitutes the missing data with empty `\x00` bytes (silence), keeping the call alive (one-way audio) instead of dropping the connection.
+* **Bandwidth Optimization:** The raw 20ms PCM audio chunk is heavily compressed in real-time using `zlib.compress()`, significantly reducing the payload size before it hits the network.
+* **RTP Header Construction:** Before sending, the compressed audio is passed to `rtp_helper.py`.
+
+### 2.6. Packet Formatting (`rtp_helper.py`)
+Since UDP does not guarantee packet delivery or order, we must wrap our audio in the **Real-time Transport Protocol (RTP)**. 
+* It uses Python's `struct.pack('!BBHII', ...)` to construct a 12-byte binary header.
+* **Sequence Number (16-bit):** Increments by 1 for every packet. Used by the receiver to detect missing packets and reorder them chronologically.
+* **Timestamp (32-bit):** A millisecond-precision wall-clock timestamp attached to every packet, used mathematically by the Jitter Buffer to calculate network transit delay.
+
+### 2.7. Audio Receiver & Playout (`receiver.py`)
+Handles incoming network data and pushes it to the speakers.
+* **The Receiver Thread:** Listens on UDP port 5005. It strips the 12-byte RTP header, decompresses the payload using `zlib.decompress`, and immediately pushes the raw audio into the Jitter Buffer. Corrupted packets that fail decompression are silently discarded.
+* **The Playout Thread:** A strictly timed loop using `sounddevice.RawOutputStream`. It pulls a 20ms frame from the Jitter Buffer. Before playing, it casts the bytes to a `numpy` array, applies a **4x digital gain** (to boost quiet laptop microphones), mathematically clips the values between `-32768 and 32767` to prevent integer overflow distortion, casts back to bytes, and plays it.
+
+### 2.8. Network Intelligence (`jitter_buffer.py`)
+The most complex and critical module. Wi-Fi networks suffer from "Jitter" (packets arriving out of order, or clumped together due to router queuing).
+* **Ramjee's Algorithm:** We implemented Ramjee's adaptive delay algorithm. For every packet, it calculates:
+  * Transit Delay ($n_i$): Current time minus packet send time.
+  * Moving Average Delay ($d_i$): $d_i = 0.125 * d_{i-1} + 0.875 * n_i$
+  * Network Jitter ($v_i$): $v_i = 0.125 * v_{i-1} + 0.875 * |n_i - d_i|$
+  * Target Playout Window ($p_i$): $d_i + 4 * v_i$
+* **Priority Queue:** Incoming packets are shoved into a `queue.PriorityQueue`, which automatically sorts them by their RTP Sequence Number, fixing out-of-order delivery.
+* **Packet Loss Concealment (PLC):** If the network lags and the buffer underflows (no audio is ready to play), it doesn't just output silence (which causes an audible "pop" or "click"). Instead, it repeats the *previous* 20ms audio frame, but artificially attenuates it by 85% (`samples * 0.85`). This creates a smooth fade-out effect.
+* **Buffer Catch-up:** If a massive lag spike resolves, a huge burst of packets arrives at once. If the queue size exceeds 8 packets (160ms of audio), it intentionally drops the oldest packets to resynchronize the audio with real-time, prioritizing low latency over perfect quality.
+
+### 2.9. Metrics & Data Visualization
+* **`jitter_metrics.csv`:** Every time a packet hits the buffer, its sequence number, send time, receive time, delay, and jitter calculations are written to this CSV in real-time.
+* **`plot_metrics.py` & `plot_jitter.py`:** Standalone Matplotlib scripts that can be triggered from the UI dashboard. They read the CSV and generate interactive graphs, mathematically proving to the user how the network is behaving and how the Adaptive Jitter Buffer is successfully smoothing out the lag.
+
+---
